@@ -14,5 +14,3 @@ try:
 except StopIteration, e:
 	pass
 
-# print "good %d bad %d n %d" % (good, bad, n)
-

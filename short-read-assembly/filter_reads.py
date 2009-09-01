@@ -1,18 +1,25 @@
 import sys
 from Bio import SeqIO
 
-n = 0
-bad = 0
-good = 0
+try:
+    FILE_NAME = sys.argv[1]
+    THRESHOLD = sys.argv[2]
+except IndexError:
+    print "Usage: filter_reads.py <fastq-file> <mean-quality-threshold>"
+    raise SystemExit
 
-for rec in SeqIO.parse(open(sys.argv[1]), "fastq-illumina"):
-	low_quality_bases = [x for x in rec.letter_annotations["phred_quality"] if x < 20]
-	if low_quality_bases:
-		bad += 1
-	else:
-		SeqIO.write([rec], sys.stdout, "fastq")
-		good += 1
-	n += 1
+iter = SeqIO.parse(open(sys.argv[1]), "fastq-illumina")
+try:
+    while 1:
+        rec1 = iter.next()
+        rec2 = iter.next()
 
-# print "good %d bad %d n %d" % (good, bad, n)
+        rec1_bad_bases = [x for x in rec1.letter_annotations["phred_quality"] if x < 20]
+        rec2_bad_bases = [x for x in rec2.letter_annotations["phred_quality"] if x < 20]
+
+        if not rec1_bad_bases and not rec2_bad_bases:
+            SeqIO.write([rec1, rec2], sys.stdout, "fastq-illumina")
+except StopIteration, e:
+    pass
+
 
