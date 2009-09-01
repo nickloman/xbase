@@ -1,3 +1,4 @@
+#!/usr/bin/python
 
 import sys, os
 from Bio.Blast import NCBIXML
@@ -36,7 +37,7 @@ for blast_record in blast_records:
         results[record_id][sequence_id] = \
             Result(gi, protein_id, str(evalue))
     except IndexError, e:
-        print "No results for %s" % (blast_record.query)
+        print >>sys.stderr, "No results for %s" % (blast_record.query)
 
 for rec in SeqIO.parse(open(sys.argv[1]), "genbank"):
     for feature in rec.features:

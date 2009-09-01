@@ -1,88 +1,61 @@
+#!/usr/bin/python
+
 import sys, os, time
 from Bio import SeqIO
 from Bio import Entrez
+
+from XBDB.models import SeqFeature, SeqFeatureQualifierValue, Annotation
+
 from utils import add_qualifier
 
-Entrez.email = "n.j.loman@bham.ac.uk"
-terms = ["db_xref", "gene", "note", "product", "EC_number"]
-consider_type = ["CDS", "gene", "Protein"]
-DELAY = 0.3
-BATCH_SIZE = 100
-n = -1
-
 def get_hash_from_record(record):
-	hash = {}
-	hash['match'] = record.annotations['organism']
-	features = [feature for feature in record.features if feature.type in consider_type]
-	try:
-		for feature in features:
-			for t in terms:
-				if t in feature.qualifiers:
-					if t in hash:
-						feature.qualifiers[t].extend(hash[t])
-					else:
-						hash[t] = feature.qualifiers[t]
-	except IndexError:
-		pass
-	return hash
+    hash = {}
+    #sfqv = SeqFeatureQualifierValue.objects.filter(seqfeature=record.seqfeature_id).order_by('rank').select_related('term')
+    #for s in sfqv:
+    #    if s.term.name in hash:
+    #        hash[s.term.name].append(s.value)
+    #    else:
+    #        hash[s.term.name] = [s.value]
+    #print hash
+
+    a = Annotation.objects.filter(seqfeature=record.seqfeature_id)[0]
+
+    return {
+        'matching_locus_tag' : [a.locus_tag],
+        'matching_protein_id' : [a.protein_id],
+        'product' : [a.product]
+    }
+
 
 for rec in SeqIO.parse(open(sys.argv[1]), "genbank"):
-	print >>sys.stderr, "Processing %s" % (rec.id)
+    print >>sys.stderr, "Processing %s" % (rec.id)
 
-def lookup_batch(batch):
-	results = {}
-	print >>sys.stderr, "Retrieving batch of %s records" % (len(batch))
-	x = ",".join([str(b) for b in batch])
-	handle = Entrez.efetch(db="protein", id=x, rettype="gb")
-	for rec in SeqIO.parse(handle, "genbank"):
-		print >>sys.stderr, rec.annotations['gi']
-		results[rec.annotations['gi']] = rec
-	return results
+    lookup_list = []
+    for feature in rec.features:
+        if feature.type == 'CDS':
+            if 'match' in feature.qualifiers:
+                continue
+            try:
+                seqfeature_id = feature.qualifiers['protein_id'][0]
+                lookup_list.append(int(seqfeature_id))
+            except KeyError:
+                pass
 
-def lookup_gi(gi):
-	time.sleep(DELAY)
-	print >>sys.stderr, "Looking up %s" % (gi)
-	handle = Entrez.efetch(db="protein", id=gi, rettype="gb")
-	record = SeqIO.read(handle, "genbank")
-	print >>sys.stderr, record.annotations['organism']
-	return get_hash_from_record(record)
+    features = SeqFeature.objects.filter(pk__in=lookup_list)
+    results = dict([(sf.seqfeature_id, sf) for sf in features])
+    print >>sys.stderr, "Complete"
 
-for rec in SeqIO.parse(open(sys.argv[1]), "genbank"):
-	print >>sys.stderr, "Processing %s" % (rec.id)
+    for feature in rec.features:
+        if feature.type == 'CDS':
+            if 'match' in feature.qualifiers:
+                continue
+            try:
+                seqfeature_id = int(feature.qualifiers['protein_id'][0])
+                qualifiers = get_hash_from_record(results[seqfeature_id])
+                for key, val in qualifiers.iteritems():
+                    add_qualifier(feature, key, val)
+            except KeyError:
+                pass
 
-	lookup_list = []
-	for feature in rec.features:
-		if feature.type == 'CDS':
-			if 'match' in feature.qualifiers:
-				continue
-			try:
-				gi = feature.qualifiers['gi'][0]
-				lookup_list.append(gi)
-			except KeyError:
-				pass
-
-	results = {}
-	while lookup_list:
-		batch = []	
-		try:
-			for n in xrange(0,BATCH_SIZE):
-				batch.append(lookup_list.pop())
-		except IndexError:
-			pass
-
-		results.update(lookup_batch(batch))
-		
-	print >>sys.stderr, "Complete"
-	for feature in rec.features:
-		if feature.type == 'CDS':
-			if 'match' in feature.qualifiers:
-				continue
-			try:
-				gi = feature.qualifiers['gi'][0]
-				qualifiers = get_hash_from_record(results[gi])
-				for key, val in qualifiers.iteritems():
-					add_qualifier(feature, key, val)
-			except KeyError:
-				pass
-	SeqIO.write([rec], sys.stdout, "genbank")
+    SeqIO.write([rec], sys.stdout, "genbank")
 
